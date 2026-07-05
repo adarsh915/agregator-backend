@@ -1,0 +1,16 @@
+node_modules/
+.env
+.DS_Store
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Uploads (keep directory structure, ignore uploaded files)
+uploads/**/*
+!uploads/**/.gitkeep

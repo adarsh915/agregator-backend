@@ -1,0 +1,34 @@
+{
+  "name": "kael-aggregator-backend",
+  "version": "1.0.0",
+  "description": "Aggregator Dashboard Backend - Enterprise CRUD System",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "seed": "node supabase/seed-admin.js",
+    "seed:rbac": "node supabase/seed-rbac.js",
+    "assign:admin": "node supabase/assign-super-admin.js"
+  },
+  "keywords": [
+    "aggregator",
+    "saas",
+    "enterprise-management"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@fastify/cors": "^8.4.2",
+    "@fastify/helmet": "^11.1.1",
+    "@fastify/multipart": "^7.7.3",
+    "@fastify/static": "^6.12.0",
+    "@supabase/supabase-js": "^2.39.1",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.3.1",
+    "fastify": "^4.25.2",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}

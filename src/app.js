@@ -53,7 +53,7 @@ async function buildApp(options = {}) {
   });
 
   await app.register(helmet, {
-    contentSecurityPolicy: false
+    contentSecurityPolicy: true
   });
 
   // Register multipart for file uploads

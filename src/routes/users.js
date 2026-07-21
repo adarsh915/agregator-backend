@@ -39,6 +39,36 @@ function registerUserRoutes(app, { userService, authService, auditLogService }) 
     }
   );
 
+  // GET /api/v1/users/stats - Get user statistics
+  app.get('/api/v1/users/stats',
+    {
+      preHandler: [authenticate, checkPermission('users.read')]
+    },
+    async (request, reply) => {
+      try {
+        const result = await userService.getStats();
+        
+        if (!result.ok) {
+          return reply.code(400).send({
+            success: false,
+            error: result.error
+          });
+        }
+
+        return {
+          success: true,
+          data: result.stats
+        };
+      } catch (error) {
+        request.log.error(error);
+        return reply.code(500).send({
+          success: false,
+          error: 'Failed to fetch user stats'
+        });
+      }
+    }
+  );
+
   // GET /api/v1/users/:id - Get single user
   app.get('/api/v1/users/:id', 
     { 

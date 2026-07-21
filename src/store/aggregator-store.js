@@ -182,6 +182,25 @@ class AggregatorStore {
     };
   }
 
+  async getUserStats() {
+    // Get total users
+    const { count: total, error: totalError } = await this.client
+      .from('aggregator_users')
+      .select('*', { count: 'exact', head: true });
+      
+    if (totalError) throw totalError;
+
+    // Get active users
+    const { count: active, error: activeError } = await this.client
+      .from('aggregator_users')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_active', true);
+      
+    if (activeError) throw activeError;
+
+    return { total: total || 0, active: active || 0 };
+  }
+
   // ============================================
   // PROFILE MANAGEMENT
   // ============================================
@@ -1590,7 +1609,8 @@ class AggregatorStore {
       query = query.lte('created_at', filters.to);
     }
     if (filters.search) {
-      query = query.ilike('action', `%${filters.search}%`);
+      const q = `%${filters.search}%`;
+      query = query.or(`action.ilike.${q},actor_name.ilike.${q},actor_email.ilike.${q},resource_name.ilike.${q}`);
     }
 
     // Pagination

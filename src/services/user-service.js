@@ -30,6 +30,16 @@ class UserService {
     }
   }
 
+  async getStats() {
+    try {
+      const stats = await this.store.getUserStats();
+      return { ok: true, stats };
+    } catch (error) {
+      console.error('Error getting user stats:', error);
+      return { ok: false, error: 'Failed to get user stats' };
+    }
+  }
+
   async getUserById(userId) {
     try {
       const user = await this.store.getAggregatorUserById(userId);

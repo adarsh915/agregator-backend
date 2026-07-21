@@ -10,6 +10,7 @@ yarn-error.log*
 *.swp
 *.swo
 *~
+*.zip
 
 # Uploads (keep directory structure, ignore uploaded files)
 uploads/**/*

@@ -23,7 +23,11 @@ function registerPackageRoutes(app, { packageService, authService, auditLogServi
   app.get('/api/v1/packages', { preHandler: authenticate }, async (request, reply) => {
     try {
       const includeInactive = request.query.includeInactive === 'true';
-      const result = await packageService.listPackages(includeInactive);
+      const page = parseInt(request.query.page) || 1;
+      const limit = parseInt(request.query.limit) || 10;
+      const search = request.query.search || '';
+
+      const result = await packageService.listPackages({ includeInactive, page, limit, search });
       return result;
     } catch (err) {
       app.log.error(err);

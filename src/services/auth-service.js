@@ -54,14 +54,18 @@ class AuthService {
 
     await this.store.createSession(token, session);
 
+    const permissions = await this.store.getUserPermissions(user.id);
+    const permissionsArray = Array.from(permissions);
+
     return {
       ok: true,
-      auth: this.getPublicAuthState(session, user),
+      auth: { ...this.getPublicAuthState(session, user), permissions: permissionsArray },
       response: {
         userId: user.id,
         email: user.email,
         displayName: user.displayName,
         role: user.role,
+        permissions: permissionsArray,
         token,
         expiresInSeconds: this.env.jwtExpiresInSeconds
       }
@@ -83,13 +87,16 @@ class AuthService {
       return { ok: false, error: 'User not found' };
     }
 
+    const permissions = await this.store.getUserPermissions(userId);
+
     return {
       ok: true,
       profile: {
         id: user.id,
         email: user.email,
         displayName: user.displayName,
-        role: user.role
+        role: user.role,
+        permissions: Array.from(permissions)
       }
     };
   }

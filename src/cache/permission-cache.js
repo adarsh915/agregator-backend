@@ -35,11 +35,12 @@ class PermissionCache {
   }
 
   deleteByPattern(pattern) {
-    // Simple pattern matching for keys like "perms:*"
-    const regex = new RegExp(pattern.replace('*', '.*'));
-    
+    // L-1 fix: use simple string-prefix matching instead of building a regex
+    // from the pattern string, which could allow ReDoS if the pattern ever
+    // came from external input.
+    const prefix = pattern.endsWith('*') ? pattern.slice(0, -1) : pattern;
     for (const key of this.cache.keys()) {
-      if (regex.test(key)) {
+      if (key.startsWith(prefix)) {
         this.cache.delete(key);
       }
     }

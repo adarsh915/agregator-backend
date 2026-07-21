@@ -13,8 +13,20 @@ class BillingService {
    */
   async getAllBillingRecords(filters = {}) {
     try {
-      const records = await this.store.getAllBillingRecords(filters);
-      return { ok: true, records };
+      const result = await this.store.getAllBillingRecords(filters);
+      const limit = filters.limit || 10;
+      const page = filters.page || 1;
+      
+      return { 
+        ok: true, 
+        records: result.data,
+        pagination: {
+          total: result.total,
+          page,
+          limit,
+          totalPages: Math.ceil(result.total / limit)
+        }
+      };
     } catch (error) {
       console.error('Error fetching billing records:', error);
       return { ok: false, error: error.message || 'Failed to fetch billing records' };

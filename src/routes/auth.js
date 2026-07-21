@@ -1,4 +1,8 @@
+const { makeAuthenticate } = require('../middleware/authenticate');
+
 function registerAuthRoutes(app, { authService, auditLogService }) {
+  const authenticate = makeAuthenticate(authService);
+
   // ── Helper: extract IP + User-Agent ──────────────────────────────────
   function clientInfo(request) {
     return {
@@ -9,22 +13,22 @@ function registerAuthRoutes(app, { authService, auditLogService }) {
     };
   }
 
-  // ── Login ─────────────────────────────────────────────────────────────
-  app.post('/api/v1/auth/login', async (request, reply) => {
+  // ── Login (H-4 fix: rate limited to 5 attempts per 15 minutes) ───────
+  app.post('/api/v1/auth/login', {
+    config: {
+      rateLimit: { max: 5, timeWindow: '15 minutes' },
+    },
+  }, async (request, reply) => {
     const email    = String(request.body?.email    || '').trim().toLowerCase();
     const password = String(request.body?.password || '');
 
-    console.log('📝 POST /api/v1/auth/login - Login attempt:', { email });
-
     if (!email || !password) {
-      console.error('❌ Login failed: Missing credentials');
       return reply.code(400).send({ error: 'Email and password are required' });
     }
 
     const result = await authService.login({ email, password });
 
     if (!result.ok) {
-      console.error('❌ Login failed:', result.error);
       // Log failed attempt (no actorId — user not authenticated yet)
       auditLogService.log({
         actorEmail:   email,
@@ -37,8 +41,6 @@ function registerAuthRoutes(app, { authService, auditLogService }) {
       });
       return reply.code(401).send({ error: result.error });
     }
-
-    console.log('✅ Login successful:', { email, userId: result.response.userId });
 
     // Log successful login
     const session = result.response;
@@ -53,7 +55,7 @@ function registerAuthRoutes(app, { authService, auditLogService }) {
         ...clientInfo(request),
       });
     } catch (auditError) {
-      console.error('⚠️  Audit log failed (non-critical):', auditError.message);
+      request.log.warn('Audit log failed (non-critical):', auditError.message);
     }
 
     return reply.code(200).send(session);
@@ -67,7 +69,6 @@ function registerAuthRoutes(app, { authService, auditLogService }) {
       : '';
 
     if (token) {
-      // Fetch session before deleting so we can log who logged out
       const session = await authService.getSession(token);
       await authService.logout(token);
 
@@ -95,34 +96,15 @@ function registerAuthRoutes(app, { authService, auditLogService }) {
       : '';
 
     const session = token ? await authService.getSession(token) : null;
-    if (!session) {
-      return reply.code(200).send({ ok: true, auth: authService.getPublicAuthState(null) });
-    }
-
     return reply.code(200).send({ ok: true, auth: authService.getPublicAuthState(session) });
   });
 
   // ── Profile ───────────────────────────────────────────────────────────
-  app.get('/api/v1/auth/profile', async (request, reply) => {
-    const authHeader = request.headers.authorization || '';
-    const token = authHeader.toLowerCase().startsWith('bearer ')
-      ? authHeader.slice(7).trim()
-      : '';
-
-    if (!token) {
-      return reply.code(401).send({ error: 'Authorization token required' });
-    }
-
-    const session = await authService.getSession(token);
-    if (!session) {
-      return reply.code(401).send({ error: 'Invalid or expired token' });
-    }
-
-    const result = await authService.getUserProfile(session.userId);
+  app.get('/api/v1/auth/profile', { preHandler: [authenticate] }, async (request, reply) => {
+    const result = await authService.getUserProfile(request.session.userId);
     if (!result.ok) {
       return reply.code(404).send({ error: result.error });
     }
-
     return reply.code(200).send({ ok: true, profile: result.profile });
   });
 }

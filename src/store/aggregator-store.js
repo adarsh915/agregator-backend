@@ -17,27 +17,39 @@ class AggregatorStore {
   // BILLING PACKAGES
   // ============================================
 
-  async listPackages(includeInactive = false) {
-    let query = this.client.from('billing_packages').select('*');
+  async listPackages({ page = 1, limit = 10, search = '', includeInactive = false } = {}) {
+    let query = this.client.from('billing_packages').select('*', { count: 'exact' });
     if (!includeInactive) {
       query = query.eq('is_active', true);
     }
+    
+    if (search) {
+      query = query.ilike('name', `%${search}%`);
+    }
+
     query = query.order('price_monthly', { ascending: true });
     
-    const { data, error } = await query;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+    query = query.range(from, to);
+
+    const { data, error, count } = await query;
     if (error) throw error;
     
-    return data.map(pkg => ({
-      id: pkg.id,
-      name: pkg.name,
-      description: pkg.description,
-      priceMonthly: pkg.price_monthly,
-      priceYearly: pkg.price_yearly,
-      features: pkg.features,
-      isActive: pkg.is_active,
-      createdAt: pkg.created_at,
-      updatedAt: pkg.updated_at
-    }));
+    return {
+      data: data.map(pkg => ({
+        id: pkg.id,
+        name: pkg.name,
+        description: pkg.description,
+        priceMonthly: pkg.price_monthly,
+        priceYearly: pkg.price_yearly,
+        features: pkg.features,
+        isActive: pkg.is_active,
+        createdAt: pkg.created_at,
+        updatedAt: pkg.updated_at
+      })),
+      total: count || 0
+    };
   }
 
   async getPackageById(packageId) {
@@ -319,16 +331,36 @@ class AggregatorStore {
   // ENTERPRISES CRUD
   // ============================================
 
-  async getEnterprises() {
-    const { data, error } = await this.client
+  async getEnterprises({ page = 1, limit = 10, search = '', status, billingPlan } = {}) {
+    let query = this.client
       .from('enterprises')
-      .select('*')
+      .select('*', { count: 'exact' })
       .eq('is_deleted', false)
       .order('created_at', { ascending: false });
 
+    if (search) {
+      query = query.ilike('enterprise_name', `%${search}%`);
+    }
+
+    if (status) {
+      query = query.eq('status', status);
+    }
+
+    if (billingPlan) {
+      query = query.eq('billing_plan', billingPlan);
+    }
+
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+    query = query.range(from, to);
+
+    const { data, error, count } = await query;
     if (error) throw error;
 
-    return (data || []).map(this.mapEnterpriseRow);
+    return {
+      data: (data || []).map((row) => this.mapEnterpriseRow(row)),
+      total: count || 0
+    };
   }
 
   async getEnterpriseById(id) {
@@ -940,8 +972,8 @@ class AggregatorStore {
   // RBAC - USER MANAGEMENT
   // ============================================
 
-  async getAllUsers() {
-    const { data, error } = await this.client
+  async getAllUsers({ page = 1, limit = 10, search = '' } = {}) {
+    let query = this.client
       .from('aggregator_users')
       .select(`
         *,
@@ -952,24 +984,38 @@ class AggregatorStore {
             display_name
           )
         )
-      `)
+      `, { count: 'exact' })
       .order('created_at', { ascending: false });
+
+    if (search) {
+      // Assuming search applies to email or display_name
+      query = query.or(`email.ilike.%${search}%,display_name.ilike.%${search}%`);
+    }
+
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+    query = query.range(from, to);
+
+    const { data, error, count } = await query;
 
     if (error) throw error;
 
-    return (data || []).map(row => ({
-      id: row.id,
-      email: row.email,
-      displayName: row.display_name,
-      isActive: row.is_active,
-      roles: (row.user_roles || []).map(ur => ({
-        id: ur.role.id,
-        name: ur.role.name,
-        displayName: ur.role.display_name
+    return {
+      data: (data || []).map(row => ({
+        id: row.id,
+        email: row.email,
+        displayName: row.display_name,
+        isActive: row.is_active,
+        roles: (row.user_roles || []).map(ur => ({
+          id: ur.role?.id,
+          name: ur.role?.name,
+          displayName: ur.role?.display_name
+        })),
+        createdAt: row.created_at,
+        lastLoginAt: row.last_login_at
       })),
-      createdAt: row.created_at,
-      lastLoginAt: row.last_login_at
-    }));
+      total: count || 0
+    };
   }
 
   async createUser(user, createdBy) {
@@ -1268,7 +1314,7 @@ class AggregatorStore {
       .select(`
         *,
         enterprise:enterprises(id, enterprise_name)
-      `)
+      `, { count: 'exact' })
       .order('created_at', { ascending: false });
 
     if (filters.status) {
@@ -1283,11 +1329,23 @@ class AggregatorStore {
     if (filters.endDate) {
       query = query.lte('period_end', filters.endDate);
     }
+    if (filters.search) {
+      query = query.ilike('invoice_number', `%${filters.search}%`);
+    }
 
-    const { data, error } = await query;
+    const page = filters.page || 1;
+    const limit = filters.limit || 10;
+    const offset = (page - 1) * limit;
+
+    query = query.range(offset, offset + limit - 1);
+
+    const { data, error, count } = await query;
     if (error) throw error;
 
-    return (data || []).map(row => this.mapBillingRecordRow(row));
+    return {
+      data: (data || []).map(row => this.mapBillingRecordRow(row)),
+      total: count || 0
+    };
   }
 
   // Get billing records for enterprise
@@ -1513,7 +1571,7 @@ class AggregatorStore {
   async queryAuditLogs(filters = {}) {
     let query = this.client
       .from('aggregator_audit_logs')
-      .select('*')
+      .select('*', { count: 'exact' })
       .order('created_at', { ascending: false });
 
     if (filters.action) {
@@ -1531,6 +1589,9 @@ class AggregatorStore {
     if (filters.to) {
       query = query.lte('created_at', filters.to);
     }
+    if (filters.search) {
+      query = query.ilike('action', `%${filters.search}%`);
+    }
 
     // Pagination
     const page = filters.page || 1;
@@ -1541,11 +1602,8 @@ class AggregatorStore {
 
     const { data, error, count } = await query;
     if (error) throw error;
-
-    // Get total count
-    const { count: totalCount } = await this.client
-      .from('aggregator_audit_logs')
-      .select('*', { count: 'exact', head: true });
+    
+    const totalCount = count || 0;
 
     return {
       logs: (data || []).map(row => ({

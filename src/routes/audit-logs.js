@@ -1,25 +1,9 @@
 const { requireSuperAdmin } = require('../middleware/require-super-admin');
+// H-1 fix: use the single shared authenticate factory — no more local duplicates
+const { makeAuthenticate } = require('../middleware/authenticate');
 
 function registerAuditLogRoutes(app, { auditLogService, authService }) {
-
-  // ── Local authenticate middleware ──────────────────────────────────────
-  async function authenticate(request, reply) {
-    const authHeader = request.headers.authorization || '';
-    const token = authHeader.toLowerCase().startsWith('bearer ')
-      ? authHeader.slice(7).trim()
-      : '';
-
-    if (!token) {
-      return reply.code(401).send({ success: false, error: 'Authorization token required' });
-    }
-
-    const session = await authService.getSession(token);
-    if (!session) {
-      return reply.code(401).send({ success: false, error: 'Invalid or expired token' });
-    }
-
-    request.session = session;
-  }
+  const authenticate = makeAuthenticate(authService);
 
   // ── Super-admin guard bound to this app's store ────────────────────────
   const superAdminGuard = requireSuperAdmin(auditLogService.store);
@@ -33,7 +17,7 @@ function registerAuditLogRoutes(app, { auditLogService, authService }) {
     { preHandler: [authenticate, superAdminGuard] },
     async (request, reply) => {
       try {
-        const { action, actorId, resourceType, from, to, page, limit } = request.query;
+        const { action, actorId, resourceType, from, to, page, limit, search } = request.query;
 
         const result = await auditLogService.queryLogs({
           action,
@@ -41,6 +25,7 @@ function registerAuditLogRoutes(app, { auditLogService, authService }) {
           resourceType,
           from,
           to,
+          search,
           page:  page  ? parseInt(page,  10) : 1,
           limit: limit ? parseInt(limit, 10) : 50,
         });

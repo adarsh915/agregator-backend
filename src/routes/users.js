@@ -1,24 +1,8 @@
-const { checkPermission } = require('../middleware/check-permission');
+const { checkPermission, invalidateUserPermissions } = require('../middleware/check-permission');
+const { makeAuthenticate } = require('../middleware/authenticate');
 
 function registerUserRoutes(app, { userService, authService, auditLogService }) {
-  // Middleware to verify authentication
-  async function authenticate(request, reply) {
-    const authHeader = request.headers.authorization || '';
-    const token = authHeader.toLowerCase().startsWith('bearer ')
-      ? authHeader.slice(7).trim()
-      : '';
-
-    if (!token) {
-      return reply.code(401).send({ success: false, error: 'Authorization token required' });
-    }
-
-    const session = await authService.getSession(token);
-    if (!session) {
-      return reply.code(401).send({ success: false, error: 'Invalid or expired token' });
-    }
-
-    request.session = session;
-  }
+  const authenticate = makeAuthenticate(authService);
 
   // GET /api/v1/users - List all users with roles
   app.get('/api/v1/users', 
@@ -27,7 +11,11 @@ function registerUserRoutes(app, { userService, authService, auditLogService }) 
     }, 
     async (request, reply) => {
       try {
-        const result = await userService.listUsers();
+        const page = parseInt(request.query.page) || 1;
+        const limit = parseInt(request.query.limit) || 10;
+        const search = request.query.search || '';
+
+        const result = await userService.listUsers({ page, limit, search });
         
         if (!result.ok) {
           return reply.code(400).send({
@@ -38,7 +26,8 @@ function registerUserRoutes(app, { userService, authService, auditLogService }) 
 
         return {
           success: true,
-          data: result.users
+          data: result.users,
+          pagination: result.pagination
         };
       } catch (error) {
         request.log.error(error);
@@ -140,30 +129,16 @@ function registerUserRoutes(app, { userService, authService, auditLogService }) 
         const { id } = request.params;
         const { displayName, password, isActive } = request.body;
 
-        console.log('📝 PUT /api/v1/users/:id - Request received:', {
-          userId: id,
-          payload: { displayName, hasPassword: !!password, isActive },
-          updatedBy: request.session?.userId
-        });
-
         const result = await userService.updateUser(id, {
           displayName,
           password,
           isActive
         }, request.session.userId);
 
-        console.log('📝 User service result:', result);
-
         if (!result.ok) {
-          console.error('❌ User update failed:', result.error);
-          return reply.code(400).send({
-            success: false,
-            error: result.error
-          });
+          return reply.code(400).send({ success: false, error: result.error });
         }
 
-        // ── Audit log ──────────────────────────────────────────────────
-        // Determine specific action for activate/deactivate
         const updAction = isActive === true  ? 'user.activate'
                         : isActive === false ? 'user.deactivate'
                         : 'user.update';
@@ -178,10 +153,8 @@ function registerUserRoutes(app, { userService, authService, auditLogService }) 
             newValues:    { displayName, isActive },
           });
         } catch (auditError) {
-          console.error('⚠️  Audit log failed (non-critical):', auditError.message);
+          request.log.warn('Audit log failed (non-critical):', auditError.message);
         }
-
-        console.log('✅ User updated successfully:', result.user);
 
         return reply.code(200).send({
           success: true,
@@ -189,12 +162,10 @@ function registerUserRoutes(app, { userService, authService, auditLogService }) 
           data: result.user
         });
       } catch (error) {
-        console.error('💥 Exception in PUT /api/v1/users/:id:', error);
-        console.error('Error stack:', error.stack);
         request.log.error(error);
         return reply.code(500).send({
           success: false,
-          error: error.message || 'Failed to update user'
+          error: 'Failed to update user'
         });
       }
     }
@@ -289,10 +260,7 @@ function registerUserRoutes(app, { userService, authService, auditLogService }) 
           request.session.userId
         );
 
-        console.log('📝 Set user roles result:', result);
-
         if (!result.ok) {
-          console.error('❌ Set user roles failed:', result.error);
           return reply.code(400).send({
             success: false,
             error: result.error
@@ -310,10 +278,12 @@ function registerUserRoutes(app, { userService, authService, auditLogService }) 
             newValues:    { roleIds },
           });
         } catch (auditError) {
-          console.error('⚠️  Audit log failed (non-critical):', auditError.message);
+          request.log.warn('Audit log failed (non-critical):', auditError.message);
         }
 
-        console.log('✅ User roles updated successfully');
+        // H-2 fix: invalidate permission cache for the user whose roles changed
+        // so the next request reflects the new permissions immediately.
+        invalidateUserPermissions(id);
 
         return reply.code(200).send({
           success: true,
@@ -321,12 +291,11 @@ function registerUserRoutes(app, { userService, authService, auditLogService }) 
           data: result.roles
         });
       } catch (error) {
-        console.error('💥 Exception in PUT /api/v1/users/:id/roles:', error);
-        console.error('Error stack:', error.stack);
         request.log.error(error);
         return reply.code(500).send({
           success: false,
-          error: error.message || 'Failed to update user roles'
+          // H-3 fix: never expose error.message to the client
+          error: 'Failed to update user roles'
         });
       }
     }

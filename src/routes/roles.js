@@ -1,24 +1,10 @@
 const { checkPermission } = require('../middleware/check-permission');
+// H-1 fix: use the single shared authenticate factory — no more local duplicates
+const { makeAuthenticate } = require('../middleware/authenticate');
 
 function registerRoleRoutes(app, { roleService, authService, auditLogService }) {
-  // Middleware to verify authentication
-  async function authenticate(request, reply) {
-    const authHeader = request.headers.authorization || '';
-    const token = authHeader.toLowerCase().startsWith('bearer ')
-      ? authHeader.slice(7).trim()
-      : '';
+  const authenticate = makeAuthenticate(authService);
 
-    if (!token) {
-      return reply.code(401).send({ success: false, error: 'Authorization token required' });
-    }
-
-    const session = await authService.getSession(token);
-    if (!session) {
-      return reply.code(401).send({ success: false, error: 'Invalid or expired token' });
-    }
-
-    request.session = session;
-  }
 
   // GET /api/v1/roles - List all roles
   app.get('/api/v1/roles', 

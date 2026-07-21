@@ -6,10 +6,24 @@ class UserService {
     this.store = store;
   }
 
-  async listUsers() {
+  async listUsers(options = {}) {
     try {
-      const users = await this.store.getAllUsers();
-      return { ok: true, users };
+      const result = await this.store.getAllUsers(options);
+      
+      const limit = options.limit || 10;
+      const page = options.page || 1;
+      const totalPages = Math.ceil(result.total / limit);
+
+      return { 
+        ok: true, 
+        users: result.data,
+        pagination: {
+          total: result.total,
+          page,
+          limit,
+          totalPages
+        }
+      };
     } catch (error) {
       console.error('Error listing users:', error);
       return { ok: false, error: 'Failed to list users' };
@@ -59,9 +73,9 @@ class UserService {
       return { ok: false, error: 'Invalid email format' };
     }
 
-    // Validate password strength (minimum 6 characters)
-    if (data.password.length < 6) {
-      return { ok: false, error: 'Password must be at least 6 characters' };
+    // Validate password strength (minimum 8 characters — NIST SP 800-63B)
+    if (data.password.length < 8) {
+      return { ok: false, error: 'Password must be at least 8 characters' };
     }
 
     try {
@@ -118,8 +132,8 @@ class UserService {
 
       // Update password if provided
       if (data.password) {
-        if (data.password.length < 6) {
-          return { ok: false, error: 'Password must be at least 6 characters' };
+        if (data.password.length < 8) {
+          return { ok: false, error: 'Password must be at least 8 characters' };
         }
         updates.passwordHash = await bcrypt.hash(data.password, 10);
       }

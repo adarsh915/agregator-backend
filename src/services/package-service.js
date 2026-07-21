@@ -3,9 +3,23 @@ class PackageService {
     this.store = store;
   }
 
-  async listPackages(includeInactive = false) {
-    const packages = await this.store.listPackages(includeInactive);
-    return { ok: true, packages };
+  async listPackages(options = {}) {
+    const result = await this.store.listPackages(options);
+    
+    const limit = options.limit || 10;
+    const page = options.page || 1;
+    const totalPages = Math.ceil(result.total / limit);
+
+    return { 
+      ok: true, 
+      packages: result.data,
+      pagination: {
+        total: result.total,
+        page,
+        limit,
+        totalPages
+      }
+    };
   }
 
   async getPackage(id) {
